@@ -5,84 +5,81 @@ import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error
+import pickle
 
-# Load environment variables from .env file
+# Charger les variables d'environnement depuis le fichier .env
 load_dotenv()
 
-# Assign variables from environment
 db_host = os.getenv('DB_HOST')
 db_user = os.getenv('DB_USER')
 db_password = os.getenv('DB_PASSWORD')
 db_name = os.getenv('DB_NAME')
-transactions_file = os.getenv('SOURCES_TRANSACTIONS')
 
-# Ensure transactions_file is correctly set
-if transactions_file is None:
-    raise ValueError("The environment variable 'SOURCES_TRANSACTIONS' is not set. Please check your .env file.")
+# Charger les données
+engine = create_engine(f"mysql+mysqlconnector://{db_user}:{db_password}@{db_host}/{db_name}")
+query = "SELECT * FROM transactions WHERE date_transaction >= '2020-01-01'"
+df = pd.read_sql(query, engine)
 
-db_url = f"mysql+mysqlconnector://{db_user}:{db_password}@{db_host}/{db_name}"
-engine = create_engine(db_url)
-Session = sessionmaker(bind=engine)
+print("Données chargées.")
 
-_start = time.time()
+# Préparer les données
+df['date_transaction'] = pd.to_datetime(df['date_transaction']).map(pd.Timestamp.to_julian_date)
+X = df[['date_transaction', 'departement', 'ville', 'type_batiment', 'vefa', 'n_pieces', 'surface_habitable', 'latitude', 'longitude']]
+y = df['prix']
 
-def log_in_out(func):
-    def decorated_func(*args, **kwargs):
-        start = time.time()
-        print(f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start))} - [INIT]: Enter {func.__name__}")
-        result = func(*args, **kwargs)
-        end = time.time()
-        print(f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end))} - [INIT]: {func.__name__} done in {round(end - start)}s")
-        return result
-    return decorated_func
+# Prétraitement des données
+numeric_features = ['date_transaction', 'n_pieces', 'surface_habitable', 'latitude', 'longitude', 'departement']
+categorical_features = ['type_batiment', 'vefa', 'ville']
 
-@log_in_out
-def read_transactions(file):
-    arrays = dict(np.load(file))
-    data = {k: [s.decode("utf-8") for s in v.tobytes().split(b"\x00")] if v.dtype == np.uint8 else v for k, v in arrays.items()}
-    df_trans = pd.DataFrame.from_dict(data)
-    return df_trans
+numeric_transformer = Pipeline(steps=[
+    ('scaler', StandardScaler())
+])
 
-@log_in_out
-def clean_transactions(df_transactions):
-    initial_len = len(df_transactions)
-    clean_df = clean_transactions_absurd(df_transactions)
-    print(f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))} - [INIT]: {initial_len - len(clean_df)} row suppressed ! That represents {((initial_len - len(clean_df)) / len(clean_df)) * 100:.2f}% of data")
-    return clean_df
+categorical_transformer = Pipeline(steps=[
+    ('onehot', OneHotEncoder(handle_unknown='ignore'))
+])
 
-@log_in_out
-def clean_transactions_range(df_trans):
-    df_trans.drop(df_trans[df_trans['prix'] < int(os.getenv('MIN_PRICE'))].index, inplace=True)
-    return df_trans
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', numeric_transformer, numeric_features),
+        ('cat', categorical_transformer, categorical_features)
+    ])
 
-@log_in_out
-def clean_transactions_absurd(df_trans):
-    grouped_stats = df_trans.groupby([pd.to_datetime(df_trans['date_transaction']).dt.year, 'departement'])[['prix', 'surface_habitable']].apply(
-        lambda x: (x['prix'] / x['surface_habitable']).agg(['median', 'std'])).reset_index(drop=False)
-    df_trans['year'] = pd.to_datetime(df_trans['date_transaction']).dt.year
-    to_clean_df = pd.merge(df_trans, grouped_stats, left_on=['year', 'departement'],
-                           right_on=['date_transaction', 'departement'], suffixes=('', '_stats'))
-    filtered_df = to_clean_df[((to_clean_df['prix'] / to_clean_df['surface_habitable']) < to_clean_df['median'] + 2 * to_clean_df['std']) & ((to_clean_df['prix'] / to_clean_df['surface_habitable']) > to_clean_df['median'] - 2 * to_clean_df['std'])]
-    filtered_df = filtered_df.drop(columns=['median', 'std', 'year'])
-    return filtered_df
+# Créer le pipeline de prétraitement et de modèle
+model = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('regressor', RandomForestRegressor())
+])
 
-@log_in_out
-def write_to_db(dataframe, table, chunksize=10000):
-    session = Session()
-    try:
-        for i in range(0, len(dataframe), chunksize):
-            chunk = dataframe.iloc[i:i+chunksize]
-            chunk.to_sql(name=table, con=engine, if_exists='append', index=False)
-            session.commit()
-    except Exception as e:
-        session.rollback()
-        print(f"Error: {e}")
-        raise
-    finally:
-        session.close()
+# Diviser les données en ensembles d'entraînement et de test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+print("Données divisées en ensembles d'entraînement et de test.")
 
-df = read_transactions(transactions_file)
-df = clean_transactions(df)
-write_to_db(df, "transactions")
+# Définir les hyperparamètres pour la recherche en grille
+param_grid = {
+    'regressor__n_estimators': [100, 200, 300],
+    'regressor__max_features': [1.0, 'sqrt', 'log2'],
+    'regressor__max_depth': [10, 20, 30, None]
+}
 
-print(f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))} - [END INIT]: Data Import done in {round(time.time() - _start)}s")
+grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5, scoring='neg_mean_squared_error')
+print("Début de la recherche en grille des hyperparamètres...")
+grid_search.fit(X_train, y_train)
+
+# Évaluer le modèle
+best_model = grid_search.best_estimator_
+y_pred = best_model.predict(X_test)
+mse = mean_squared_error(y_test, y_pred)
+print(f"Mean Squared Error: {mse}")
+
+# Enregistrer le modèle
+with open('model.pkl', 'wb') as file:
+    pickle.dump(best_model, file)
+
+print("Modèle enregistré sous 'model.pkl'.")

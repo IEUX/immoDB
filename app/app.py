@@ -1,14 +1,13 @@
 import os
-from dotenv import load_dotenv
 import pandas as pd
-import mysql.connector
-from sqlalchemy import create_engine
 import dash
 from dash import dcc, html
 import dash_bootstrap_components as dbc
 import folium
 import pickle
 from dash.dependencies import Input, Output
+from sqlalchemy import create_engine
+from dotenv import load_dotenv
 
 # Charger les variables d'environnement depuis le fichier .env
 load_dotenv()
@@ -20,25 +19,34 @@ db_password = os.getenv('DB_PASSWORD')
 db_name = os.getenv('DB_NAME')
 
 # Connexion à la base de données MySQL
-config = {
-    'host': db_host,
-    'user': db_user,
-    'password': db_password,
-    'database': db_name
-}
-
-engine = create_engine(f"mysql+mysqlconnector://{config['user']}:{config['password']}@{config['host']}/{config['database']}")
+engine = create_engine(f"mysql+mysqlconnector://{db_user}:{db_password}@{db_host}/{db_name}")
 
 # Charger les données
-query = "SELECT date_transaction, prix, n_pieces, surface_habitable, latitude, longitude FROM transactions LIMIT 1000"
+query = "SELECT date_transaction, prix, departement FROM transactions WHERE date_transaction >= '2015-01-01'"
 df = pd.read_sql(query, engine)
 
-# Charger le modèle de prédiction
-with open('model.pkl', 'rb') as file:
+# Charger le modèle et les colonnes
+with open('models/model_transaction_meanMonth5.pkl', 'rb') as file:
     model = pickle.load(file)
 
+with open('models/columns.pkl', 'rb') as file:
+    columns = pickle.load(file)
+
+# Préparer les données pour la prédiction
+df['date_transaction'] = pd.to_datetime(df['date_transaction'])
+df['month'] = df['date_transaction'].dt.to_period('M').astype(str)
+X_pred = df[['month', 'departement']]
+
+print("Colonnes avant transformation:", X_pred.columns)
+X_pred_transformed = model.named_steps['preprocessor'].transform(X_pred)
+print("Colonnes après transformation:", X_pred_transformed.shape)
+
+# Réindexer les données transformées
+X_pred_transformed = pd.DataFrame(X_pred_transformed, columns=model.named_steps['preprocessor'].get_feature_names_out())
+X_pred_transformed = X_pred_transformed.reindex(columns=columns, fill_value=0)
+
 # Créer les prédictions pour les points de données
-df['predicted_price'] = model.predict(df[['year', 'n_pieces', 'surface_habitable']])
+df['predicted_price'] = model.named_steps['regressor'].predict(X_pred_transformed)
 
 # Créer l'application Dash
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
