@@ -6,6 +6,11 @@ __pycache__/
 # C extensions
 *.so
 
+# Ignorer les fichiers de configuration contenant des informations sensibles
+.env
+conf.ini
+
+
 # Distribution / packaging
 .Python
 build/
