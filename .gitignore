@@ -11,6 +11,9 @@ __pycache__/
 conf.ini
 
 
+*.pyc
+.DS_Store
+
 # Distribution / packaging
 .Python
 build/

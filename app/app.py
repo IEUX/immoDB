@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 import pandas as pd
+import mysql.connector
 from sqlalchemy import create_engine
 import dash
 from dash import dcc, html
@@ -23,11 +24,13 @@ config = {
     'database': db_name
 }
 
-engine = create_engine(f"mysql+mysqlconnector://{config['user']}:{config['password']}@{config['host']}/{config['database']}")
-
-# Charger les données
-query = "SELECT date_transaction AS date, prix FROM transactions LIMIT 1000"
-df = pd.read_sql(query, engine)
+try:
+    engine = create_engine(f"mysql+mysqlconnector://{config['user']}:{config['password']}@{config['host']}/{config['database']}")
+    query = "SELECT date_transaction, prix FROM transactions LIMIT 1000"
+    df = pd.read_sql(query, engine)
+except Exception as e:
+    print(f"Erreur de connexion à la base de données : {e}")
+    df = pd.DataFrame()
 
 # Créer l'application Dash
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -41,7 +44,7 @@ app.layout = dbc.Container([
         dbc.Col(dcc.Graph(
             figure={
                 'data': [
-                    {'x': df['date'], 'y': df['prix'], 'type': 'bar', 'name': 'Prix des transactions'}
+                    {'x': df['date_transaction'], 'y': df['prix'], 'type': 'bar', 'name': 'Prix des transactions'}
                 ],
                 'layout': {
                     'title': 'Prix des Transactions par Date'
@@ -51,5 +54,5 @@ app.layout = dbc.Container([
     ])
 ])
 
-if __name__ == '__main__':
-    app.run_server(debug=True, host='127.0.0.1', port=8050)
+if __name__ == "__main__":
+    app.run_server(debug=True, host='0.0.0.0', port=8050)
