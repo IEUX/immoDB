@@ -1,5 +1,10 @@
 # immoDB
-créez un fichier '.env' à la racine contenant:
+
+## Configuration
+
+Créez un fichier `.env` à la racine contenant les informations suivantes :
+
+```plaintext
 DB_HOST=à remplir
 DB_USER=à remplir
 DB_PASSWORD=à remplir
