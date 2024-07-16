@@ -5,7 +5,6 @@ from sqlalchemy import create_engine
 import dash
 from dash import dcc, html
 import dash_bootstrap_components as dbc
-from dash.dependencies import Input, Output
 
 # Charger les variables d'environnement depuis le fichier .env
 load_dotenv()
@@ -26,8 +25,8 @@ config = {
 
 engine = create_engine(f"mysql+mysqlconnector://{config['user']}:{config['password']}@{config['host']}/{config['database']}")
 
-# Charger un échantillon des données (assurez-vous que la table 'transactions' existe dans votre base de données)
-query = "SELECT date, prix FROM transactions LIMIT 1000"
+# Charger les données
+query = "SELECT date_transaction AS date, prix FROM transactions LIMIT 1000"
 df = pd.read_sql(query, engine)
 
 # Créer l'application Dash
@@ -39,36 +38,18 @@ app.layout = dbc.Container([
         dbc.Col(html.H1("Tableau de Bord ImmoDB"), className="mb-2")
     ]),
     dbc.Row([
-        dbc.Col(dcc.Graph(id='transactions-graph'), className="mb-4")
-    ]),
-    dbc.Row([
-        dbc.Col(dcc.Slider(
-            id='data-slider',
-            min=1000,
-            max=10000,
-            step=1000,
-            value=1000,
-            marks={i: str(i) for i in range(1000, 10001, 1000)}
-        ), width=12)
+        dbc.Col(dcc.Graph(
+            figure={
+                'data': [
+                    {'x': df['date'], 'y': df['prix'], 'type': 'bar', 'name': 'Prix des transactions'}
+                ],
+                'layout': {
+                    'title': 'Prix des Transactions par Date'
+                }
+            }
+        ), className="mb-4")
     ])
 ])
 
-@app.callback(
-    Output('transactions-graph', 'figure'),
-    [Input('data-slider', 'value')]
-)
-def update_graph(rows):
-    query = f"SELECT date, prix FROM transactions LIMIT {rows}"
-    df = pd.read_sql(query, engine)
-    figure = {
-        'data': [
-            {'x': df['date'], 'y': df['prix'], 'type': 'bar', 'name': 'Prix des transactions'}
-        ],
-        'layout': {
-            'title': 'Prix des Transactions par Date'
-        }
-    }
-    return figure
-
 if __name__ == '__main__':
-    app.run_server(debug=True, host='0.0.0.0', port=8050)
+    app.run_server(debug=True, host='127.0.0.1', port=8050)
