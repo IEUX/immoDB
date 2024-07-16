@@ -7,3 +7,4 @@ dash-bootstrap-components
 mysql-connector-python
 dash-core-components
 dash-html-components
+folium
