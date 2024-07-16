@@ -23,9 +23,10 @@ config = {
     'password': db_password,
     'database': db_name
 }
+
 engine = create_engine(f"mysql+mysqlconnector://{config['user']}:{config['password']}@{config['host']}/{config['database']}")
 
-# Exemple de requête SQL
+# Charger les données de transactions
 query = "SELECT * FROM transactions"
 df = pd.read_sql(query, engine)
 
@@ -52,4 +53,4 @@ app.layout = dbc.Container([
 ])
 
 if __name__ == "__main__":
-    app.run_server(debug=True, host='0.0.0.0', port=8080)
+    app.run_server(debug=True, host='0.0.0.0', port=8050)
