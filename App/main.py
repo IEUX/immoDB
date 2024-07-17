@@ -71,6 +71,8 @@ app.layout = html.Div(className='content', children=[
         ], style={'font': 'Roboto'}),
         html.Div(className='card', children=[
             html.H3(children='Voir nos prévisions'),
+            html.Img(src='assets/images/previsions.png', alt='map', style={'width': '90%', 'height': '75%', 'border-radius': '10px'}),
+            html.A(html.Button('Voir nos prévsions', className='btn', style={'font': 'Roboto'}), href='#prevision')
         ], style={'font': 'Roboto'})
     ]),
     html.Div(className='graph-box', children=[
@@ -89,7 +91,7 @@ app.layout = html.Div(className='content', children=[
         dcc.Graph(id='pie-chart', className='map')
     ]),
     html.Div(className='graph-box', children=[
-        html.H2(children='Prevision du prix des transactions par departement'),
+        html.H2(children='Prevision du prix des transactions par departement', id='prevision'),
         dcc.Dropdown(df_prevision['departement'].unique(), 1, id='prevision-selection', className='map-selector'),
         dcc.Graph(id='prevision-chart', className='map')
     ]),
