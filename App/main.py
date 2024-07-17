@@ -40,6 +40,12 @@ FROM loyers
 GROUP BY year, departement
 """, engine)
 
+df_prevision = pd.read_sql("""
+SELECT * FROM
+  `immodb`.`prix_mensuel`
+                           """, engine)
+df_prevision['month'] = pd.to_datetime(df_prevision['month'], format='%Y-%m')
+
 # Load GeoJSON
 zipcodes = json.load(open("./data/departements.geojson"))
 
@@ -65,12 +71,7 @@ app.layout = html.Div(className='content', children=[
         ], style={'font': 'Roboto'}),
         html.Div(className='card', children=[
             html.H3(children='Voir nos prévisions'),
-        ], style={'font': 'Roboto'}),
-        html.Div(className='card', children=[
-            html.H3(children='Notebook Carto'),
-            html.Img(src='assets/images/notebook.png', alt='notebook', style={'width': '90%', 'height': '75%', 'border-radius': '10px'}),
-            html.A(html.Button('Voir le notebook', className='btn', style={'font': 'Roboto'}), href='/notebook')
-        ], style={'font': 'Roboto'}),
+        ], style={'font': 'Roboto'})
     ]),
     html.Div(className='graph-box', children=[
         html.H2(children='Prix moyen du m² par département et par année', id='map'),
@@ -88,10 +89,11 @@ app.layout = html.Div(className='content', children=[
         dcc.Graph(id='pie-chart', className='map')
     ]),
     html.Div(className='graph-box', children=[
-        html.H2(children='Loyers moyens par m² pour les appartements et les maisons'),
-        dcc.Dropdown(df_loyers['departement'].unique(), "01", id='bar-selection', className='map-selector'),
-        dcc.Graph(id='bar-chart', className='map')
+        html.H2(children='Prevision du prix des transactions par departement'),
+        dcc.Dropdown(df_prevision['departement'].unique(), 1, id='prevision-selection', className='map-selector'),
+        dcc.Graph(id='prevision-chart', className='map')
     ]),
+
     dcc.Location(id='url', refresh=False),
     html.Div(id='page-content')
 ])
@@ -131,23 +133,23 @@ def update_pieChart(value):
     df_by_departement = df[df.departement == value]
     return px.pie(df_by_departement, names='type_batiment', values='prix_moyen')
 
-# Update bar chart by filtering the dataframe by departement
-@callback(
-    Output('bar-chart', 'figure'),
-    Input('bar-selection', 'value')
+
+@app.callback(
+    Output('prevision-chart', 'figure'),
+    Input('prevision-selection', 'value')
 )
-def update_barChart(value):
-    df_by_departement = df_loyers[df_loyers.departement == value]
-    return px.bar(df_by_departement, x='year', y=['loyer_m2_appartement', 'loyer_m2_maison'],
-                  title="Loyers moyens par m² pour les appartements et les maisons par année",
-                  labels={'value': 'Loyer moyen', 'variable': 'Type de logement'})
+def update_chart(selected_departement):
+    filtered_df = df_prevision[df_prevision['departement'] == selected_departement]
+    fig = px.line(filtered_df, x='month', y='prix_moyen',
+                  title=f'Prix Moyens Mensuels pour le Département {selected_departement}')
+    return fig
 
 # Display notebook page
 @app.callback(Output('page-content', 'children'),
               [Input('url', 'pathname')])
 def display_page(pathname):
     if pathname == '/notebook':
-        with open('carto.html', 'r') as f:
+        with open('notebooks/carto.ipynb', 'r') as f:
             notebook_html = f.read()
         return html.Div([
             html.H2("Notebook Carto"),
