@@ -6,6 +6,7 @@ import flask
 from sqlalchemy import create_engine
 import os
 from dotenv import load_dotenv
+import dash_bootstrap_components as dbc
 
 # Load environment variables
 load_dotenv()
@@ -46,7 +47,7 @@ zipcodes = json.load(open("./data/departements.geojson"))
 server = flask.Flask(__name__)
 
 # Dash App Init
-app = Dash(__name__, server=server)
+app = Dash(__name__, server=server, external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.layout = html.Div(className='content', children=[
     html.Div(className='header', children=[
         html.H1(children='immoDB', style={'font': 'Roboto'})
@@ -64,6 +65,11 @@ app.layout = html.Div(className='content', children=[
         ], style={'font': 'Roboto'}),
         html.Div(className='card', children=[
             html.H3(children='Voir nos prévisions'),
+        ], style={'font': 'Roboto'}),
+        html.Div(className='card', children=[
+            html.H3(children='Notebook Carto'),
+            html.Img(src='assets/images/notebook.png', alt='notebook', style={'width': '90%', 'height': '75%', 'border-radius': '10px'}),
+            html.A(html.Button('Voir le notebook', className='btn', style={'font': 'Roboto'}), href='/notebook')
         ], style={'font': 'Roboto'}),
     ]),
     html.Div(className='graph-box', children=[
@@ -85,7 +91,9 @@ app.layout = html.Div(className='content', children=[
         html.H2(children='Loyers moyens par m² pour les appartements et les maisons'),
         dcc.Dropdown(df_loyers['departement'].unique(), "01", id='bar-selection', className='map-selector'),
         dcc.Graph(id='bar-chart', className='map')
-    ])
+    ]),
+    dcc.Location(id='url', refresh=False),
+    html.Div(id='page-content')
 ])
 
 # Update map by filtering the dataframe by year
@@ -133,6 +141,20 @@ def update_barChart(value):
     return px.bar(df_by_departement, x='year', y=['loyer_m2_appartement', 'loyer_m2_maison'],
                   title="Loyers moyens par m² pour les appartements et les maisons par année",
                   labels={'value': 'Loyer moyen', 'variable': 'Type de logement'})
+
+# Display notebook page
+@app.callback(Output('page-content', 'children'),
+              [Input('url', 'pathname')])
+def display_page(pathname):
+    if pathname == '/notebook':
+        with open('carto.html', 'r') as f:
+            notebook_html = f.read()
+        return html.Div([
+            html.H2("Notebook Carto"),
+            html.Iframe(srcDoc=notebook_html, style={"width": "100%", "height": "1000px"})
+        ])
+    else:
+        return html.Div()
 
 if __name__ == '__main__':
     app.run(debug=True)
