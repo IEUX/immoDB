@@ -1,12 +1,11 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
-import pickle
 from sqlalchemy import create_engine
 import os
 from dotenv import load_dotenv
@@ -26,62 +25,88 @@ db_name = os.getenv('DB_NAME')
 # Charger les données
 logging.info("Chargement des données...")
 engine = create_engine(f"mysql+mysqlconnector://{db_user}:{db_password}@{db_host}/{db_name}")
-query = "SELECT * FROM transactions WHERE date_transaction >= '2015-01-01'"
+query = """
+SELECT 
+    DATE_FORMAT(date_transaction, '%Y-%m') AS month,
+    departement,
+    AVG(prix) AS prix_moyen
+FROM transactions
+GROUP BY month, departement
+"""
 df = pd.read_sql(query, engine)
 logging.info("Données chargées.")
 
-# Agréger les prix par mois et par département
-logging.info("Agrégation des données par mois et par département...")
-df['date_transaction'] = pd.to_datetime(df['date_transaction'])
-df['month'] = df['date_transaction'].dt.to_period('M')
-grouped_df = df.groupby(['month', 'departement'])['prix'].mean().reset_index()
-grouped_df['month'] = grouped_df['month'].astype(str)  # Convertir les périodes en chaînes de caractères
-
 # Préparer les données
 logging.info("Préparation des données...")
-X = grouped_df[['month', 'departement']]
-y = grouped_df['prix']
+df['month'] = pd.to_datetime(df['month'])
+df['departement'] = df['departement'].astype(int)
+df['year'] = df['month'].dt.year
+df['month_num'] = df['month'].dt.month
+df['month'] = df['month'].dt.to_period('M').astype(str)
 
-# Pipeline de prétraitement
-numeric_features = ['departement']
-categorical_features = ['month']
+# Générer les prédictions pour chaque département
+future_dates = pd.date_range(start='2024-01', periods=24, freq='M')
+future_months = future_dates.to_period('M').astype(str)
+departements = df['departement'].unique()
+all_predictions = []
 
-numeric_transformer = Pipeline(steps=[
-    ('scaler', StandardScaler())])
+for dept in departements:
+    logging.info(f"Traitement du département {dept}...")
+    df_dept = df[df['departement'] == dept]
 
-categorical_transformer = Pipeline(steps=[
-    ('onehot', OneHotEncoder(handle_unknown='ignore'))])
+    if len(df_dept) < 2:
+        logging.warning(f"Pas assez de données pour le département {dept}, ignoré.")
+        continue
 
-preprocessor = ColumnTransformer(
-    transformers=[
-        ('num', numeric_transformer, numeric_features),
-        ('cat', categorical_transformer, categorical_features)])
+    X = df_dept[['year', 'month_num']]
+    y = df_dept['prix_moyen']
 
-# Préparer le pipeline complet
-pipeline = Pipeline(steps=[('preprocessor', preprocessor),
-                           ('regressor', LinearRegression())])
+    # Pipeline de prétraitement
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', StandardScaler(), ['year', 'month_num'])])
 
-# Diviser les données en ensembles d'entraînement et de test
-logging.info("Division des données en ensembles d'entraînement et de test...")
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    pipeline = Pipeline(steps=[('preprocessor', preprocessor),
+                               ('regressor', LinearRegression())])
 
-# Entraînement du modèle
-logging.info("Entraînement du modèle de régression linéaire...")
-pipeline.fit(X_train, y_train)
-logging.info("Modèle entraîné.")
+    # Diviser les données en ensembles d'entraînement et de test
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Évaluer le modèle
-logging.info("Évaluation du modèle...")
-y_pred = pipeline.predict(X_test)
-mse = mean_squared_error(y_test, y_pred)
-logging.info(f"Mean Squared Error: {mse}")
+    # Entraînement du modèle
+    pipeline.fit(X_train, y_train)
 
-# Enregistrer le modèle et les colonnes
-logging.info("Enregistrement du modèle et des colonnes...")
-with open('models/model_transaction_meanMonth5.pkl', 'wb') as file:
-    pickle.dump(pipeline, file)
+    # Évaluation du modèle
+    train_score = pipeline.score(X_train, y_train)
+    test_score = pipeline.score(X_test, y_test)
+    mse = mean_squared_error(y_test, pipeline.predict(X_test))
 
-with open('models/columns.pkl', 'wb') as file:
-    pickle.dump(pipeline.named_steps['preprocessor'].get_feature_names_out(), file)
+    logging.info(
+        f"Département {dept} - Train Score: {train_score}, Test Score: {test_score}, Mean Squared Error: {mse}")
 
-logging.info("Modèle entraîné et enregistré avec succès.")
+    # Préparation des données futures pour les prédictions
+    future_data = pd.DataFrame({
+        'month': future_months,
+        'year': future_dates.year,
+        'month_num': future_dates.month,
+        'departement': dept
+    })
+
+    # Faire les prédictions
+    future_predictions = pipeline.predict(future_data[['year', 'month_num']])
+    future_data['prix_moyen'] = future_predictions
+
+    # Ajouter les prédictions au dataframe
+    all_predictions.append(future_data)
+
+# Combiner les prédictions avec les données historiques
+combined_df = pd.concat([df] + all_predictions, ignore_index=True)
+
+# Sauvegarder les données combinées dans un fichier CSV
+logging.info("Sauvegarde des données combinées dans un fichier CSV...")
+combined_df.to_csv('historical_and_predictions_monthly.csv', index=False)
+logging.info("Données combinées sauvegardées avec succès dans 'historical_and_predictions_monthly.csv'.")
+
+# Afficher les scores du modèle pour le dernier département traité
+print(f"Train Score: {train_score}")
+print(f"Test Score: {test_score}")
+print(f"Mean Squared Error: {mse}")

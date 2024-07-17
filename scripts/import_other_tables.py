@@ -4,17 +4,19 @@ import sqlalchemy
 from sqlalchemy.orm import sessionmaker
 import configparser
 import os
+from dotenv import load_dotenv
+
 
 # Read the configuration file
-config = configparser.ConfigParser()
-config.read('../conf.ini')
+load_dotenv()
 
-# Define the MySQL connection using SQLAlchemy
-db_url = f"mysql+mysqlconnector://{config['database']['user']}:{config['database']['password']}@{config['database']['host']}/{config['database']['name']}"
+# Définir la connexion MySQL en utilisant SQLAlchemy
+db_url = f"mysql+mysqlconnector://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}"
 engine = sqlalchemy.create_engine(db_url)
 Session = sessionmaker(bind=engine)
 
 _start = time.time()
+
 
 def log_in_out(func):
     # Decorator to log function calls
