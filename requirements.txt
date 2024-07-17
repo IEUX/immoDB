@@ -8,3 +8,5 @@ mysql-connector-python
 dash-core-components
 dash-html-components
 folium
+plotly
+python-dotenv
